@@ -1,0 +1,87 @@
+;
+; KryptoLoader.inf
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=Sample ; TODO: edit Class
+ClassGuid={78A1C341-4539-11d3-B88D-00C04FAD5171} ; TODO: edit ClassGuid
+Provider=%ManufacturerName%
+CatalogFile=KryptoLoader.cat
+DriverVer= ; TODO: set DriverVer in stampinf property pages
+PnpLockDown=1
+
+[DestinationDirs]
+DefaultDestDir = 12
+KryptoLoader_Device_CoInstaller_CopyFiles = 11
+
+; ================= Class section =====================
+
+[ClassInstall32]
+Addreg=SampleClassReg
+
+[SampleClassReg]
+HKR,,,0,%ClassName%
+HKR,,Icon,,-5
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+KryptoLoader.sys  = 1,,
+WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll=1 ; make sure the number matches with SourceDisksNames
+
+;*****************************************
+; Install Section
+;*****************************************
+
+[Manufacturer]
+%ManufacturerName%=Standard,NT$ARCH$
+
+[Standard.NT$ARCH$]
+%KryptoLoader.DeviceDesc%=KryptoLoader_Device, Root\KryptoLoader ; TODO: edit hw-id
+
+[KryptoLoader_Device.NT]
+CopyFiles=Drivers_Dir
+
+[Drivers_Dir]
+KryptoLoader.sys
+
+;-------------- Service installation
+[KryptoLoader_Device.NT.Services]
+AddService = KryptoLoader,%SPSVCINST_ASSOCSERVICE%, KryptoLoader_Service_Inst
+
+; -------------- KryptoLoader driver install sections
+[KryptoLoader_Service_Inst]
+DisplayName    = %KryptoLoader.SVCDESC%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\KryptoLoader.sys
+
+;
+;--- KryptoLoader_Device Coinstaller installation ------
+;
+
+[KryptoLoader_Device.NT.CoInstallers]
+AddReg=KryptoLoader_Device_CoInstaller_AddReg
+CopyFiles=KryptoLoader_Device_CoInstaller_CopyFiles
+
+[KryptoLoader_Device_CoInstaller_AddReg]
+HKR,,CoInstallers32,0x00010000, "WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll,WdfCoInstaller"
+
+[KryptoLoader_Device_CoInstaller_CopyFiles]
+WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll
+
+[KryptoLoader_Device.NT.Wdf]
+KmdfService =  KryptoLoader, KryptoLoader_wdfsect
+[KryptoLoader_wdfsect]
+KmdfLibraryVersion = $KMDFVERSION$
+
+[Strings]
+SPSVCINST_ASSOCSERVICE= 0x00000002
+ManufacturerName="<Your manufacturer name>" ;TODO: Replace with your manufacturer name
+ClassName="Samples" ; TODO: edit ClassName
+DiskName = "KryptoLoader Installation Disk"
+KryptoLoader.DeviceDesc = "KryptoLoader Device"
+KryptoLoader.SVCDESC = "KryptoLoader Service"
