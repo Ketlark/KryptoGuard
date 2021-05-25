@@ -1,32 +1,12 @@
 #include "IoController.h"
 #include "Helper.h"
+#include "AntiAuto.h"
 #include "ObCallback.h"
 #include <stdlib.h>
 
-BOOLEAN ProtectionModeReceived = FALSE;
-
-NTSTATUS Create(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-	Irp->IoStatus.Status = STATUS_SUCCESS;
-	Irp->IoStatus.Information = 0;
-
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-	LogDebug("CreateCall was called, connection established !");
-
-	return STATUS_SUCCESS;
-}
-NTSTATUS Close(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-	Irp->IoStatus.Status = STATUS_SUCCESS;
-	Irp->IoStatus.Information = 0;
-
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
-	LogDebug("Connection terminated");
-	return STATUS_SUCCESS;
-}
-
 NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
+	UNREFERENCED_PARAMETER(DeviceObject);
+
 	NTSTATUS Status = STATUS_UNSUCCESSFUL;
 	ULONG BytesIO = 0;
 
@@ -40,6 +20,28 @@ NTSTATUS IoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 
 		Status = STATUS_SUCCESS;
 		BytesIO = strlen(Input);
+	}
+	else if(ControlCode == IO_SEND_PING) {
+		char* Input = (char*)Irp->AssociatedIrp.SystemBuffer;
+		CHAR* pong = "pong";
+
+		if (!strcmp(Input, "ping")) {
+			RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, pong, strlen(pong));
+
+			Status = STATUS_SUCCESS;
+			BytesIO = strlen(pong);
+		}
+	} else if (ControlCode == IO_SEND_CLICK) {
+		char* Input = (char*)Irp->AssociatedIrp.SystemBuffer;
+		USHORT defaultClick = 99;
+
+		if (!strcmp(Input, "click")) {
+			RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, &clickStatus != NULL ? &clickStatus : &defaultClick, sizeof(clickStatus));
+			clickStatus = 0;
+
+			Status = STATUS_SUCCESS;
+			BytesIO = sizeof(clickStatus);
+		}
 	} else {
 		BytesIO = 0;
 	}

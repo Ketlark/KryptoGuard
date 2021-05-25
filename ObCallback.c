@@ -1,9 +1,12 @@
 #pragma once
+
 #include "ObCallback.h"
+#include "AntiAuto.h"
 #include <string.h>
 
 PVOID ObHandle = NULL;
-HANDLE ProtectedProcessPid = 0;
+HANDLE ProtectedProcessPid[24] = { 0 };
+SHORT OffsetPid = 0;
 
 LPSTR GetProcessNameFromPid(HANDLE pid) {
 	PEPROCESS Process;
@@ -15,36 +18,36 @@ LPSTR GetProcessNameFromPid(HANDLE pid) {
 }
 
 VOID SetProtectedProcess(HANDLE pid) {
-	ProtectedProcessPid = pid;
+	ProtectedProcessPid[OffsetPid] = pid;
+	OffsetPid++;
+
+	if (!monitorStatus) EnableMouseMonitor();
 }
 
 OB_PREOP_CALLBACK_STATUS ProcessPreCallback(PVOID RegistrationContext, POB_PRE_OPERATION_INFORMATION OperationInformation) {
 	UNREFERENCED_PARAMETER(RegistrationContext);
 
-	LPSTR ProcName;
 	PEPROCESS OpenedProcess = (PEPROCESS)OperationInformation->Object;
-
-	if (ProtectedProcessPid == 0)
-		return OB_PREOP_SUCCESS;
 
 	if (OperationInformation->KernelHandle)
 		return OB_PREOP_SUCCESS;
 
-	if (ProtectedProcessPid != 0) {
-		LogDebug("Process object operation, name:[%s], destPid:%d, srcTid:%d",
-			PsGetProcessId(OpenedProcess), PsGetCurrentThreadId(), GetProcessNameFromPid(PsGetProcessId(OpenedProcess))
-		);
-	}
+	for (size_t i = 0; i < OffsetPid; i++) {
 
-	if (ProtectedProcessPid != 0 && PsGetProcessId(OpenedProcess) == ProtectedProcessPid) {
-		ProcName = GetProcessNameFromPid(ProtectedProcessPid);
-		LogDebug("Protected name target : [%s]", ProcName);
+		if(ProtectedProcessPid[i] == 0)
+			return OB_PREOP_SUCCESS;
 
-		if (OperationInformation->Operation == OB_OPERATION_HANDLE_CREATE) {
-			OperationInformation->Parameters->CreateHandleInformation.DesiredAccess = (SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION);
+		if (PsGetCurrentProcessId() == ProtectedProcessPid[i]) {
+			return OB_PREOP_SUCCESS;
 		}
-		else {
-			OperationInformation->Parameters->DuplicateHandleInformation.DesiredAccess = (SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION);
+
+		if (ProtectedProcessPid[i] != 0 && PsGetProcessId(OpenedProcess) == ProtectedProcessPid[i]) {
+			if (OperationInformation->Operation == OB_OPERATION_HANDLE_CREATE) {
+				OperationInformation->Parameters->CreateHandleInformation.DesiredAccess = (SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION);
+			}
+			else {
+				OperationInformation->Parameters->DuplicateHandleInformation.DesiredAccess = (SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION);
+			}
 		}
 	}
 
@@ -56,46 +59,36 @@ OB_PREOP_CALLBACK_STATUS ThreadPreCallback(PVOID RegistrationContext, POB_PRE_OP
 
 	LPSTR ProcName;
 	PEPROCESS OpenedProcess = (PEPROCESS)OperationInformation->Object;
-	PEPROCESS ProtectedProcess;
-
-	if (ProtectedProcessPid == 0)
-		return OB_PREOP_SUCCESS;
-
-	NTSTATUS lookup = PsLookupProcessByProcessId(ProtectedProcessPid, &ProtectedProcess);
-	if (!NT_SUCCESS(lookup)) {
-		LogDebug("Failed to lookup protected pid");
-	}
 
 	if (OperationInformation->KernelHandle)
 		return OB_PREOP_SUCCESS;
 
-	if (ProtectedProcess != 0) {
-		LogInfo("(Thread) object operation, srcName:[%s], dstName:[%s], destPid:%d, destTid:%d, srcPid:%d",
-			GetProcessNameFromPid(PsGetCurrentProcessId),
-			GetProcessNameFromPid(PsGetThreadProcessId),
-			(ULONG)PsGetThreadProcessId(OperationInformation->Object),
-			(ULONG)PsGetThreadId(OperationInformation->Object),
-			(ULONG)PsGetCurrentProcessId()
-		);
+	for (size_t i = 0; i < OffsetPid; i++) {
+		if (ProtectedProcessPid[i] == 0)
+			return OB_PREOP_SUCCESS;
+
+		if (PsGetCurrentProcessId() == ProtectedProcessPid[i]) {
+			return OB_PREOP_SUCCESS;
+		}
+
+		if (ProtectedProcessPid[i] != 0 && PsGetThreadProcessId(OpenedProcess) == ProtectedProcessPid[i]) {
+			ProcName = GetProcessNameFromPid(ProtectedProcessPid[i]);
+			//LogDebug("(Thread) Protected name target : [%s]:%d by [%s]:%d", ProcName, ProtectedProcessPid[i], GetProcessNameFromPid(PsGetCurrentProcessId()), PsGetCurrentProcessId());
+
+			if (OperationInformation->Operation == OB_OPERATION_HANDLE_CREATE) {
+				OperationInformation->Parameters->CreateHandleInformation.DesiredAccess = (SYNCHRONIZE | THREAD_QUERY_LIMITED_INFORMATION);
+			}
+			else {
+				OperationInformation->Parameters->DuplicateHandleInformation.DesiredAccess = (SYNCHRONIZE | THREAD_QUERY_LIMITED_INFORMATION);
+			}
+		}
 	}
 
-	if (ProtectedProcess != 0 && PsGetThreadProcessId(OpenedProcess) == ProtectedProcess) {
-		ProcName = GetProcessNameFromPid(ProtectedProcessPid);
-		LogDebug("(Thread) Protected name target : [%s]", ProcName);
-
-		if (OperationInformation->Operation == OB_OPERATION_HANDLE_CREATE) {
-			OperationInformation->Parameters->CreateHandleInformation.DesiredAccess = (SYNCHRONIZE | THREAD_QUERY_LIMITED_INFORMATION);
-		}
-		else {
-			OperationInformation->Parameters->DuplicateHandleInformation.DesiredAccess = (SYNCHRONIZE | THREAD_QUERY_LIMITED_INFORMATION);
-		}
-	}
 	return OB_PREOP_SUCCESS;
 }
 
 NTSTATUS InitObCallback() {
 	NTSTATUS NtHandleCallback = STATUS_UNSUCCESSFUL;
-	NTSTATUS NtThreadCallback = STATUS_UNSUCCESSFUL;
 
 	OB_OPERATION_REGISTRATION OBOperationRegistration[2];
 	OB_CALLBACK_REGISTRATION OBOCallbackRegistration;
@@ -124,8 +117,6 @@ NTSTATUS InitObCallback() {
 	//and store the obRegCallback adress if registration is successful
 	NtHandleCallback = ObRegisterCallbacks(&OBOCallbackRegistration, &ObHandle);
 
-	// Thread notify creation -- no need atm
-	//PsSetCreateThreadNotifyRoutine(CreateThreadNotifyRoutine);
 
 	if (!NT_SUCCESS(NtHandleCallback)) {
 		DestroyObCallback();
@@ -137,8 +128,33 @@ NTSTATUS InitObCallback() {
 	return NtHandleCallback;
 }
 
+VOID InitNotifyRoutine() {
+	// Thread notify creation -- no need atm
+	//PsSetCreateThreadNotifyRoutine(CreateThreadNotifyRoutine);
+
+	PsSetCreateProcessNotifyRoutineEx(ProcessNotifyRoutine, FALSE);
+}
+
 VOID CreateThreadNotifyRoutine(IN HANDLE ProcessId, IN HANDLE ThreadId, IN BOOLEAN Create) {
+	UNREFERENCED_PARAMETER(ProcessId);
+	UNREFERENCED_PARAMETER(ThreadId);
+
 	//LogDebug("Thread notify routine : operation, pid:%d, theadId:%d, create:%d", (ULONG)ProcessId, (ULONG)ThreadId, Create);
+}
+
+VOID ProcessNotifyRoutine(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo) {
+	UNREFERENCED_PARAMETER(Process);
+
+	//Decrease offset when protected PID was killed/exited
+	if (CreateInfo == NULL) {
+		for (size_t i = 0; i < OffsetPid; i++) {
+			if (ProtectedProcessPid[i] == ProcessId) {
+				ProtectedProcessPid[i] = 0;
+				OffsetPid--;
+				if (OffsetPid <= 0 && monitorStatus) DisableMouseMonitor();
+			}
+		}
+	}
 }
 
 VOID DestroyObCallback() {

@@ -1,0 +1,29 @@
+﻿;
+; KryptoGuard.inf
+;
+
+[Version]
+Class=Sample
+Provider="Kryptonia"
+Signature="$WINDOWS NT$"
+ClassGuid={506ABCE0-6F38-4A51-89EC-D23D0F4AF243}
+DriverVer=05/16/2021,1.00.1000.2
+CatalogFile=kryptoguard.cat
+PnpLockdown=0
+
+; ================= Files section =====================
+
+[DefautlInstall]
+CopyFiles= SourceFiles
+
+[SourceDisksNames]
+1 = "KryptoGuard Installation Disk",,,0
+
+[SourceDisksFiles]
+KryptoGuard.sys = 1
+
+[DestinationDirs] 
+SourceFiles = 12
+
+[SourceFiles]
+KryptoGuard.sys
